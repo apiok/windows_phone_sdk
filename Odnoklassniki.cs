@@ -11,201 +11,197 @@ using Odnoklassniki.ServiceStructures;
 using System.ComponentModel;
 using System.Linq;
 
+// ReSharper disable once CheckNamespace
 namespace Odnoklassniki
 {
+// ReSharper disable once InconsistentNaming
     class SDK
     {
-
+        /// <summary>
+        /// Parameters name prefix that will be used to store parameters in application isolated storage.
+        /// </summary>
         [DefaultValue("OK_SDK_")]
         public static string SettingsPrefix{get; set;}
-
+        /*
+         * Error strings.
+         * If you see these errors, see documentation here http://apiok.ru/ .
+         */
+        public const string ErrorSessionExpired = "SESSION_EXPIRED";
+        public const string ErrorNoTokenSentByServer = "NO_ACCESS_TOKEN_SENT_BY_SERVER";
+        public const string ErrorBadApiRequest = "BAD_API_REQUEST";
         /*
          * Uris, uri templates, data templates
          */
-        private const string URI_API_REQUEST = "http://api.odnoklassniki.ru/fb.do";
-        private const string URI_TOKEN_REQUEST = "http://api.odnoklassniki.ru/oauth/token.do";
-        private const string URI_TEMPLATE_AUTH = "http://www.odnoklassniki.ru/oauth/authorize?client_id={0}&scope={1}&response_type=code&redirect_uri={2}&layout=m";
-        private const string DATA_TEMPLATE_AUTH_TOKEN_REQUEST = "code={0}&redirect_uri={1}&grant_type=authorization_code&client_id={2}&client_secret={3}";
-        private const string DATA_TEMPLATE_AUTH_TOKEN_UPDATE_REQUEST = "refresh_token={0}&grant_type=refresh_token&client_id={1}&client_secret={2}";
-        /*
-         * End uris, uri templates, data templates
-         */
-        public const string ERROR_SESSION_EXPIRED = "SESSION_EXPIRED";
-        public const string ERROR_NO_TOKEN_SENT_BY_SERVER = "NO_ACCESS_TOKEN_SENT_BY_SERVER";
-        /*
-         * if you see this text, read about errors here http://apiok.ru/wiki/pages/viewpage.action?pageId=77824003
-         */
-        public const string ERROR_BAD_API_REQUEST = "BAD_API_REQUEST";
-        private const string SDK_EXCEPTION = "Odnoklassniki sdk exception. Please, check your app info, request correctness and internet connection. If problem persists, contact SDK developers with error and your actions description.";
-        private const string PARAMETER_NAME_ACCESS_TOKEN = "access_token";
-        private const string PARAMETER_NAME_REFRESH_TOKEN = "refresh_token";
-        private string app_id;
-        private string app_public_key;
-        private string app_secret_key;
-        private string redirect_url;
-        private string permissions;
-        private string access_token;
-        private string refresh_token;
-        private string code;
-        private ConcurrentDictionary<HttpWebRequest, CallbackStruct> callbacks = new ConcurrentDictionary<HttpWebRequest, CallbackStruct>();
-        private AuthCallbackStruct authCallback, updateCallback;
+        private const string UriApiRequest = "http://api.odnoklassniki.ru/fb.do";
+        private const string UriTokenRequest = "http://api.odnoklassniki.ru/oauth/token.do";
+        private const string UriTemplateAuth = "http://www.odnoklassniki.ru/oauth/authorize?client_id={0}&scope={1}&response_type=code&redirect_uri={2}&layout=m";
+        private const string DataTemplateAuthTokenRequest = "code={0}&redirect_uri={1}&grant_type=authorization_code&client_id={2}&client_secret={3}";
+        private const string DataTemplateAuthTokenUpdateRequest = "refresh_token={0}&grant_type=refresh_token&client_id={1}&client_secret={2}";
+
+        private const string SdkException = "Odnoklassniki sdk exception. Please, check your app info, request correctness and internet connection. If problem persists, contact SDK developers with error and your actions description.";
+        private const string ParameterNameAccessToken = "access_token";
+        private const string ParameterNameRefreshToken = "refresh_token";
+        private const string ResponsePartErrorCode = "\"error_code\"";
+        private const int ErrorCodeSessionExpired = 102;
+
+        private readonly string _appId;
+        private readonly string _appPublicKey;
+        private readonly string _appSecretKey;
+        private readonly string _redirectUrl;
+        private readonly string _permissions;
+        private string _accessToken;
+        private string _refreshToken;
+        private string _code;
+        private readonly ConcurrentDictionary<HttpWebRequest, CallbackStruct> _callbacks = new ConcurrentDictionary<HttpWebRequest, CallbackStruct>();
+        private AuthCallbackStruct _authCallback, _updateCallback;
 
         private enum OAuthRequestType : byte { OAuthTypeAuth, OAuthTypeUpdateToken };
 
-        public SDK(string applicationId, string applicationPublicKey, string applicationSecretKey, string redirectURL, string permissions)
+        public SDK(string applicationId, string applicationPublicKey, string applicationSecretKey, string redirectUrl, string permissions)
         {
-            this.app_id = applicationId;
-            this.app_public_key = applicationPublicKey;
-            this.app_secret_key = applicationSecretKey;
-            this.redirect_url = redirectURL;
-            this.permissions = permissions;
+
+            this._appId = applicationId;
+            this._appPublicKey = applicationPublicKey;
+            this._appSecretKey = applicationSecretKey;
+            this._redirectUrl = redirectUrl;
+            this._permissions = permissions;
         }
 
-        /**
-         * Authorize the application with permissions.
-         * Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
-         * @param browser - browser element will be used for OAuth2 authorisation.
-         * @param callbackContext - PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.
-         * @param onSuccess - this function will be called after success authorisation(in callbackContext thread)
-         * @param onError - this function will be called after unsuccess authorisation(in callbackContext thread)
-         */
+        /// <summary>
+        /// Authorize the application with permissions.
+        /// Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
+        /// </summary>
+        /// <param name="browser">browser element will be used for OAuth2 authorisation.</param>
+        /// <param name="callbackContext">PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.</param>
+        /// <param name="onSuccess">this function will be called after success authorisation(in callbackContext thread)</param>
+        /// <param name="onError">this function will be called after unsuccess authorisation(in callbackContext thread)</param>
+        /// <param name="saveSession">if true, saves refresh ann access tokens to application islolated storage</param>
         public void Authorize(WebBrowser browser, PhoneApplicationPage callbackContext, Action onSuccess, Action<Exception> onError, bool saveSession = true)
         {
-            this.authCallback.onSuccess = onSuccess;
-            this.authCallback.onError = onError;
-            this.authCallback.callbackContext = callbackContext;
-            this.authCallback.saveSession = saveSession;
-            Uri uri = new Uri(String.Format(URI_TEMPLATE_AUTH, this.app_id, this.permissions, this.redirect_url), UriKind.Absolute);
-            browser.Navigated += new EventHandler<NavigationEventArgs>(NavigateHandler);
+            this._authCallback.OnSuccess = onSuccess;
+            this._authCallback.OnError = onError;
+            this._authCallback.CallbackContext = callbackContext;
+            this._authCallback.SaveSession = saveSession;
+            Uri uri = new Uri(String.Format(UriTemplateAuth, this._appId, this._permissions, this._redirectUrl), UriKind.Absolute);
+            browser.Navigated += NavigateHandler;
             browser.Navigate(uri);
         }
 
-        /*
-         * Prepairs and sends API request.
-         * Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
-         * @param method methodname
-         * @param parameters dictionary "parameter_name":"parameter_value"
-         * @param callbackContext - PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.
-         * @param onSuccess - this function will be called after success authorisation(in callbackContext thread)
-         * @param onError - this function will be called after unsuccess authorisation(in callbackContext thread)
-         */
+        /// <summary>
+        /// Prepairs and sends API request.
+        /// Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
+        /// </summary>
+        /// <param name="method">methodname</param>
+        /// <param name="parameters">dictionary "parameter_name":"parameter_value"</param>
+        /// <param name="callbackContext">PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.</param>
+        /// <param name="onSuccess">this function will be called after success authorisation(in callbackContext thread)</param>
+        /// <param name="onError">this function will be called after unsuccess authorisation(in callbackContext thread)</param>
         public void SendRequest(string method, Dictionary<string, string> parameters, PhoneApplicationPage callbackContext, Action<string> onSuccess, Action<Exception> onError)
         {
             try
             {
-                Dictionary<string, string> parametersLocal;
-                if (parameters == null)
-                {
-                    parametersLocal = new Dictionary<string, string>();
-                }
-                else
-                {
-                    parametersLocal = new Dictionary<string, string>(parameters);
-                }
-                StringBuilder builder = new StringBuilder(URI_API_REQUEST).Append("?");
+                Dictionary<string, string> parametersLocal = parameters == null ? new Dictionary<string, string>() : new Dictionary<string, string>(parameters);
+                StringBuilder builder = new StringBuilder(UriApiRequest).Append("?");
                 parametersLocal.Add("sig", this.CalcSignature(method, parameters));
-                parametersLocal.Add("application_key", this.app_public_key);
+                parametersLocal.Add("application_key", this._appPublicKey);
                 parametersLocal.Add("method", method);
-                parametersLocal.Add(PARAMETER_NAME_ACCESS_TOKEN, this.access_token);
+                parametersLocal.Add(ParameterNameAccessToken, this._accessToken);
                 foreach (KeyValuePair<string, string> pair in parametersLocal)
                 {
                     builder.Append(pair.Key).Append("=").Append(pair.Value).Append("&");
                 }
                 // removing last & added with cycle
                 builder.Remove(builder.Length - 1, 1);
-                HttpWebRequest request = HttpWebRequest.CreateHttp(builder.ToString());
+                HttpWebRequest request = WebRequest.CreateHttp(builder.ToString());
                 CallbackStruct callbackStruct;
-                callbackStruct.onSuccess = onSuccess;
-                callbackStruct.callbackContext = callbackContext;
-                callbackStruct.onError = onError;
-                callbacks.safeAdd(request, callbackStruct);
+                callbackStruct.OnSuccess = onSuccess;
+                callbackStruct.CallbackContext = callbackContext;
+                callbackStruct.OnError = onError;
+                this._callbacks.SafeAdd(request, callbackStruct);
                 request.BeginGetResponse(this.RequestCallback, request);
             }
             catch (Exception e)
             {
                 if (onError != null)
                 {
-                    onError.Invoke(new Exception(SDK_EXCEPTION, e));
+                    onError.Invoke(new Exception(SdkException, e));
                 }
             }
         }
 
-        /**
-         * Tries to update access_token with refresh_token.
-         * Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
-         * @param callbackContext - PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.
-         * @param onSuccess - this function will be called after success authorisation(in callbackContext thread)
-         * @param onError - this function will be called after unsuccess authorisation(in callbackContext thread)
-         */
+        /// <summary>
+        /// Tries to update access_token with refresh_token.
+        /// Calls onSuccess after correct response, onError otherwise(in callbackContext thread).
+        /// </summary>
+        /// <param name="callbackContext">PhoneApplicationPage in context of witch RequestCallback would be called. Used to make working with UI components from callbacks simplier.</param>
+        /// <param name="onSuccess">this function will be called after success authorisation(in callbackContext thread)</param>
+        /// <param name="onError">this function will be called after unsuccess authorisation(in callbackContext thread)</param>
+        /// <param name="saveSession">if true, saves new access token to application isolated storage</param>
         public void UpdateToken(PhoneApplicationPage callbackContext, Action onSuccess, Action<Exception> onError, bool saveSession = true)
         {
-            this.updateCallback.callbackContext = callbackContext;
-            this.updateCallback.onSuccess = onSuccess;
-            this.updateCallback.saveSession = saveSession;
-            this.updateCallback.onError = onError;
+            this._updateCallback.CallbackContext = callbackContext;
+            this._updateCallback.OnSuccess = onSuccess;
+            this._updateCallback.SaveSession = saveSession;
+            this._updateCallback.OnError = onError;
             try
             {
-                BeginOAuthRequest(OAuthRequestType.OAuthTypeUpdateToken);
+                BeginOAuthRequest(SDK.OAuthRequestType.OAuthTypeUpdateToken);
             }
             catch(Exception e)
             {
                 if (onError != null)
                 {
-                    onError.Invoke(new Exception(SDK_EXCEPTION, e));
+                    onError.Invoke(new Exception(SdkException, e));
                 }
             }
         }
  
-        /**
-         * Saves acces_token and refresh_token to application isolated storage.
-         */
+        /// <summary>
+        /// Saves acces_token and refresh_token to application isolated storage.
+        /// </summary>
         public void SaveSession()
         {
             try
             {
                 IsolatedStorageSettings appSettings = IsolatedStorageSettings.ApplicationSettings;
-                appSettings[SettingsPrefix + PARAMETER_NAME_ACCESS_TOKEN] = access_token;
-                appSettings[SettingsPrefix + PARAMETER_NAME_REFRESH_TOKEN] = refresh_token;
+                appSettings[SDK.SettingsPrefix + SDK.ParameterNameAccessToken] = this._accessToken;
+                appSettings[SDK.SettingsPrefix + SDK.ParameterNameRefreshToken] = this._refreshToken;
                 appSettings.Save();
             }
             catch (IsolatedStorageException e)
             {
-                throw new Exception(SDK_EXCEPTION, e);
+                throw new Exception(SdkException, e);
             }
         }
 
-        /**
-         * Tries to load acces_token and refresh_token from application isolated storage.
-         * This function doesn't guarantee, that tokens are correct.
-         * @return true if access_tokent and refresh_token loaded from isolated storage false otherwise
-         */
+        /// <summary>
+        /// Tries to load acces_token and refresh_token from application isolated storage.
+        /// This function doesn't guarantee, that tokens are correct.
+        /// <returns>Returns true if access_tokent and refresh_token loaded from isolated storage false otherwise.</returns>
+        /// </summary>
         public bool TryLoadSession()
         {
             IsolatedStorageSettings appSettings = IsolatedStorageSettings.ApplicationSettings;
-            if (appSettings.Contains(SettingsPrefix + PARAMETER_NAME_ACCESS_TOKEN) && appSettings.Contains(SettingsPrefix + PARAMETER_NAME_REFRESH_TOKEN))
+            if (appSettings.Contains(SDK.SettingsPrefix + SDK.ParameterNameAccessToken) && appSettings.Contains(SDK.SettingsPrefix + SDK.ParameterNameRefreshToken))
             {
-                access_token = (string)appSettings[SettingsPrefix + PARAMETER_NAME_ACCESS_TOKEN];
-                refresh_token = (string)appSettings[SettingsPrefix + PARAMETER_NAME_REFRESH_TOKEN];
-                return access_token != null && refresh_token != null;
+                this._accessToken = (string)appSettings[SDK.SettingsPrefix + SDK.ParameterNameAccessToken];
+                this._refreshToken = (string)appSettings[SDK.SettingsPrefix + SDK.ParameterNameRefreshToken];
+                return this._accessToken != null && this._refreshToken != null;
             }
-            else
-            {
-                return false;
-            }
-
+            return false;
         }
 
-        /*
-         * Removes access_token and refresh_token from appliction isolated storage and object.
-         * You have to get new tokens usin Authorise method after calling this method.
-         */
+        /// <summary>
+        /// Removes access_token and refresh_token from appliction isolated storage and object.
+        /// You have to get new tokens usin Authorise method after calling this method.
+        /// </summary>
         public void ResetSession()
         {
-            access_token = null;
-            refresh_token = null;
+            this._accessToken = null;
+            this._refreshToken = null;
             IsolatedStorageSettings appSettings = IsolatedStorageSettings.ApplicationSettings;
-            appSettings.Remove(SettingsPrefix + PARAMETER_NAME_ACCESS_TOKEN);
-            appSettings.Remove(SettingsPrefix + PARAMETER_NAME_REFRESH_TOKEN);
+            appSettings.Remove(SDK.SettingsPrefix + SDK.ParameterNameAccessToken);
+            appSettings.Remove(SDK.SettingsPrefix + SDK.ParameterNameRefreshToken);
         }
 
         #region functions used for authorisation and updating token
@@ -214,42 +210,42 @@ namespace Odnoklassniki
         {
             try
             {
-                WebBrowser wb = sender as WebBrowser;
+                const string codeIs = "code=", errorIs = "error=";
                 string query = e.Uri.Query;
-                if (query.IndexOf("code=") != -1)
+                if (query.IndexOf(codeIs, System.StringComparison.OrdinalIgnoreCase) != -1)
                 {
-                    code = query.Substring(query.IndexOf("code=") + 5);
-                    BeginOAuthRequest(OAuthRequestType.OAuthTypeAuth);
+                    this._code = query.Substring(query.IndexOf(codeIs, System.StringComparison.OrdinalIgnoreCase) + codeIs.Length);
+                    this.BeginOAuthRequest(SDK.OAuthRequestType.OAuthTypeAuth);
                 }
-                else if (query.IndexOf("error=") != -1)
+                else if (query.IndexOf(errorIs, System.StringComparison.OrdinalIgnoreCase) != -1)
                 {
-                    throw new Exception(query.Substring(query.IndexOf("error=") + 6));
+                    throw new Exception(query.Substring(query.IndexOf(errorIs, System.StringComparison.OrdinalIgnoreCase) + errorIs.Length));
                 }
             }
             catch (Exception ex)
             {
-                ProcessOAuthError(new Exception(SDK_EXCEPTION, ex), OAuthRequestType.OAuthTypeAuth);
+                ProcessOAuthError(new Exception(SdkException, ex), SDK.OAuthRequestType.OAuthTypeAuth);
             }
         }
 
-        private void BeginOAuthRequest(OAuthRequestType type)
+        private void BeginOAuthRequest(SDK.OAuthRequestType type)
         {
             try
             {
-                Uri myUri = new Uri(URI_TOKEN_REQUEST);
-                HttpWebRequest request = (HttpWebRequest)HttpWebRequest.Create(myUri);
+                Uri myUri = new Uri(UriTokenRequest);
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(myUri);
                 request.Method = "POST";
                 request.ContentType = "application/x-www-form-urlencoded";
-                request.BeginGetRequestStream(new AsyncCallback((arg) => { BeginGetOAuthResponse(arg, type); }), request);
+                request.BeginGetRequestStream(arg => BeginGetOAuthResponse(arg, type), request);
 
             }
             catch (Exception e)
             {
-                ProcessOAuthError(new Exception(SDK_EXCEPTION, e), type);
+                ProcessOAuthError(new Exception(SdkException, e), type);
             }
         }
 
-        private void BeginGetOAuthResponse(IAsyncResult result, OAuthRequestType type)
+        private void BeginGetOAuthResponse(IAsyncResult result, SDK.OAuthRequestType type)
         {
             try
             {
@@ -257,28 +253,30 @@ namespace Odnoklassniki
                 Stream postStream = request.EndGetRequestStream(result);
 
                 string parameters = null;
-                if (type == OAuthRequestType.OAuthTypeAuth)
+                if (type == SDK.OAuthRequestType.OAuthTypeAuth)
                 {
-                    parameters = String.Format(DATA_TEMPLATE_AUTH_TOKEN_REQUEST, new object[] {this.code, this.redirect_url, this.app_id, this.app_secret_key});
+                    parameters = String.Format(DataTemplateAuthTokenRequest, new object[] {this._code, this._redirectUrl, this._appId, this._appSecretKey});
                 }
-                else if (type == OAuthRequestType.OAuthTypeUpdateToken)
+                else if (type == SDK.OAuthRequestType.OAuthTypeUpdateToken)
                 {
-                    parameters = String.Format(DATA_TEMPLATE_AUTH_TOKEN_UPDATE_REQUEST, this.refresh_token, this.app_id, this.app_secret_key);
+                    parameters = String.Format(DataTemplateAuthTokenUpdateRequest, this._refreshToken, this._appId, this._appSecretKey);
                 }
+                // ReSharper disable once AssignNullToNotNullAttribute
+                // for now, it's correct to throw ArgumentNullException, if it'll be
                 byte[] byteArray = Encoding.UTF8.GetBytes(parameters);
 
                 postStream.Write(byteArray, 0, byteArray.Length);
                 postStream.Close();
 
-                request.BeginGetResponse(new AsyncCallback((arg) => { ProcessOAuthResponse(arg, type); }), request);
+                request.BeginGetResponse(arg => ProcessOAuthResponse(arg, type), request);
             }
             catch (Exception e)
             {
-                ProcessOAuthError(new Exception(SDK_EXCEPTION, e), type);
+                ProcessOAuthError(new Exception(SdkException, e), type);
             }
         }
 
-        private void ProcessOAuthResponse(IAsyncResult callbackResult, OAuthRequestType type)
+        private void ProcessOAuthResponse(IAsyncResult callbackResult, SDK.OAuthRequestType type)
         {
             try
             {
@@ -287,48 +285,45 @@ namespace Odnoklassniki
                 using (StreamReader httpWebStreamReader = new StreamReader(response.GetResponseStream()))
                 {
                     string result = httpWebStreamReader.ReadToEnd();
-                    int tokenPosition = result.IndexOf(PARAMETER_NAME_ACCESS_TOKEN);
+                    int tokenPosition = result.IndexOf(ParameterNameAccessToken, System.StringComparison.OrdinalIgnoreCase);
                     if(tokenPosition != 0)
                     {
+                        const string tokenNameValueSeparator = "\":\"";
+                        const char tokenStopSymbol = '\"';
                         StringBuilder builder = new StringBuilder();
-                        //plus length of (access_token":")
-                        tokenPosition += 15;
-                        while (tokenPosition < result.Length && !result[tokenPosition].Equals( '\"'))
+                        tokenPosition += SDK.ParameterNameAccessToken.Length + tokenNameValueSeparator.Length;
+                        while (tokenPosition < result.Length && !result[tokenPosition].Equals(tokenStopSymbol))
                         {
                             builder.Append(result[tokenPosition]);
                             tokenPosition++;
                         }
-                        this.access_token = builder.ToString();
-                        AuthCallbackStruct callbackStruct = updateCallback;
-                        if (type == OAuthRequestType.OAuthTypeAuth)
+                        this._accessToken = builder.ToString();
+                        AuthCallbackStruct callbackStruct = this._updateCallback;
+                        if (type == SDK.OAuthRequestType.OAuthTypeAuth)
                         {
                             builder.Clear();
-                            //plus length of (refresh_token":")
-                            tokenPosition = result.IndexOf(PARAMETER_NAME_REFRESH_TOKEN) + 16;
-                            while (tokenPosition < result.Length && !result[tokenPosition].Equals('\"'))
+                            tokenPosition = result.IndexOf(SDK.ParameterNameRefreshToken, System.StringComparison.OrdinalIgnoreCase) + SDK.ParameterNameRefreshToken.Length + tokenNameValueSeparator.Length;
+                            while (tokenPosition < result.Length && !result[tokenPosition].Equals(tokenStopSymbol))
                             {
                                 builder.Append(result[tokenPosition]);
                                 tokenPosition++;
                             }
-                            this.refresh_token = builder.ToString();
+                            this._refreshToken = builder.ToString();
 
-                            callbackStruct = authCallback;
+                            callbackStruct = this._authCallback;
                         }
-                        if (callbackStruct.saveSession)
+                        if (callbackStruct.SaveSession)
                         {
                             SaveSession();
                         }
-                        if (callbackStruct.callbackContext != null && callbackStruct.onSuccess != null)
+                        if (callbackStruct.CallbackContext != null && callbackStruct.OnSuccess != null)
                         {
-                            callbackStruct.callbackContext.Dispatcher.BeginInvoke(() =>
-                            {
-                                callbackStruct.onSuccess.Invoke();
-                            });
+                            callbackStruct.CallbackContext.Dispatcher.BeginInvoke(() => callbackStruct.OnSuccess.Invoke());
                         }
                     }
                     else
                     {
-                        ProcessOAuthError(new Exception(ERROR_NO_TOKEN_SENT_BY_SERVER), type);
+                        ProcessOAuthError(new Exception(ErrorNoTokenSentByServer), type);
                     }
                 }
             }
@@ -338,67 +333,60 @@ namespace Odnoklassniki
             }
         }
 
-        private void ProcessOAuthError(Exception e, OAuthRequestType type)
+        private void ProcessOAuthError(Exception e, SDK.OAuthRequestType type)
         {
-            if (type == OAuthRequestType.OAuthTypeAuth && authCallback.onError != null && authCallback.callbackContext != null)
+            if (type == SDK.OAuthRequestType.OAuthTypeAuth && this._authCallback.OnError != null && this._authCallback.CallbackContext != null)
             {
-                authCallback.callbackContext.Dispatcher.BeginInvoke(() =>
-                {
-                    authCallback.onError.Invoke(e);
-                });
+                this._authCallback.CallbackContext.Dispatcher.BeginInvoke(() => this._authCallback.OnError.Invoke(e));
             }
-            else if (type == OAuthRequestType.OAuthTypeUpdateToken && updateCallback.onError != null)
+            else if (type == SDK.OAuthRequestType.OAuthTypeUpdateToken && this._updateCallback.OnError != null)
             {
-                updateCallback.callbackContext.Dispatcher.BeginInvoke(() =>
-                {
-                    updateCallback.onError.Invoke(e);
-                });
+                this._updateCallback.CallbackContext.Dispatcher.BeginInvoke(() => this._updateCallback.OnError.Invoke(e));
             }
         }
 
         #endregion
 
-        /**
-         * Callback for SendRequest function.
-         * Checks for errors and calls callback for each API request.
-         */
+        /// <summary>
+        /// Callback for SendRequest function.
+        /// Checks for errors and calls callback for each API request.
+        /// </summary>
         private void RequestCallback(IAsyncResult result)
         {
             HttpWebRequest request = result.AsyncState as HttpWebRequest;
             try
             {
+                // if response == null, we'll get exception
+                // ReSharper disable once PossibleNullReferenceException
                 WebResponse response = request.EndGetResponse(result);
-                string resultText = GetUTF8TextFromWebResponse(response);
-                CallbackStruct callback = callbacks.safeGet(request);
-                callbacks.safeRemove(request);
-                if (resultText.IndexOf("\"error_code\":102") != -1)
+                string resultText = GetUtf8TextFromWebResponse(response);
+                CallbackStruct callback = this._callbacks.SafeGet(request);
+                this._callbacks.SafeRemove(request);
+                if (resultText.IndexOf(SDK.ResponsePartErrorCode + ":" + SDK.ErrorCodeSessionExpired, System.StringComparison.OrdinalIgnoreCase) != -1)
                 {
-                    if (callback.onError != null)
+                    if (callback.OnError != null)
                     {
-                        callback.onError(new Exception(ERROR_SESSION_EXPIRED));
+                        callback.OnError(new Exception(ErrorSessionExpired));
                         return;
                     }
                 }
-                else if (resultText.IndexOf("\"error_code\"") != -1)
+                else if (resultText.IndexOf(SDK.ResponsePartErrorCode, System.StringComparison.OrdinalIgnoreCase) != -1)
                 {
-                    if (callback.onError != null)
+                    if (callback.OnError != null)
                     {
-                        callback.onError(new Exception(ERROR_BAD_API_REQUEST + "  " + resultText));
+                        callback.OnError(new Exception(ErrorBadApiRequest + "  " + resultText));
                         return;
                     }
                 }
-                if (callback.callbackContext != null && callback.onSuccess != null)
+                if (callback.CallbackContext != null && callback.OnSuccess != null)
                 {
-                    callback.callbackContext.Dispatcher.BeginInvoke(() =>
-                    {
-                        callback.onSuccess.Invoke(resultText);
-                    });
+                    callback.CallbackContext.Dispatcher.BeginInvoke(() => callback.OnSuccess.Invoke(resultText));
                 }    
             }
             catch (WebException e)
             {
-                Action<Exception> onError = callbacks.safeGet(request).onError;
-                callbacks.safeRemove(request);
+                Action<Exception> onError = this._callbacks.SafeGet(request).OnError;
+                this._callbacks.SafeRemove(request);
                 if (onError != null)
                 {
                     onError.Invoke(e);
@@ -406,7 +394,7 @@ namespace Odnoklassniki
             }
         }
 
-        private static string GetUTF8TextFromWebResponse(WebResponse response)
+        private static string GetUtf8TextFromWebResponse(WebResponse response)
         {
             StringBuilder sb = new StringBuilder();
             Byte[] buf = new byte[8192];
@@ -423,31 +411,24 @@ namespace Odnoklassniki
             return sb.ToString();
         }
 
-        /**
-         * Calculates signature for API request with given method and parameters.
-         * @param method method name
-         * @param parameters dictionary "parameter_name":"parameter_value"
-         */
-        private string CalcSignature(string method, Dictionary<string, string> parameters)
+        /// <summary>
+        /// Calculates signature for API request with given method and parameters.
+        /// </summary>
+        /// <param name="method">method name</param>
+        /// <param name="parameters">dictionary "parameter_name":"parameter_value"</param>
+        /// <returns>Returns signature.</returns>
+        private string CalcSignature(string method, Dictionary<string, string> parameters = null)
         {
-            Dictionary<string, string> parametersLocal;
-            if (parameters == null)
-            {
-                parametersLocal = new Dictionary<string, string>();
-            }
-            else
-            {
-                parametersLocal = new Dictionary<string, string>(parameters);
-            }
+            Dictionary<string, string> parametersLocal = parameters == null ? new Dictionary<string, string>() : new Dictionary<string, string>(parameters);
 
-            parametersLocal.Add("application_key", this.app_public_key);
+            parametersLocal.Add("application_key", this._appPublicKey);
             parametersLocal.Add("method", method);
             StringBuilder builder = new StringBuilder();
             foreach (KeyValuePair<string, string> pair in parametersLocal.OrderBy(item=>item.Key))
             {
                 builder.Append(pair.Key).Append("=").Append(pair.Value);
             }
-            string s = MD5.GetMd5String(access_token.Insert(access_token.Length, this.app_secret_key));
+            string s = MD5.GetMd5String(this._accessToken.Insert(this._accessToken.Length, this._appSecretKey));
             return MD5.GetMd5String(builder.Append(s).ToString());
         }
 
@@ -456,12 +437,12 @@ namespace Odnoklassniki
 
     class Utils
     {
-        public static void downloadImageAsync(Uri imageAbsoluteUri, PhoneApplicationPage context, Action<BitmapImage> callbackOnSuccess, Action<Exception> callbackOnError)
+        public static void DownloadImageAsync(Uri imageAbsoluteUri, PhoneApplicationPage context, Action<BitmapImage> callbackOnSuccess, Action<Exception> callbackOnError)
         {
             try
             {
                 WebClient wc = new WebClient();
-                wc.OpenReadCompleted += new OpenReadCompletedEventHandler((s, e) =>
+                wc.OpenReadCompleted += (s, e) =>
                 {
                     if (e.Error == null && !e.Cancelled)
                     {
@@ -469,10 +450,7 @@ namespace Odnoklassniki
                         {
                             BitmapImage image = new BitmapImage();
                             image.SetSource(e.Result);
-                            context.Dispatcher.BeginInvoke(() =>
-                            {
-                                callbackOnSuccess.Invoke(image);
-                            });
+                            context.Dispatcher.BeginInvoke(() => callbackOnSuccess.Invoke(image));
                         }
                         catch (Exception ex)
                         {
@@ -486,7 +464,7 @@ namespace Odnoklassniki
                     {
                         System.Diagnostics.Debug.WriteLine("Error downloading image");
                     }
-                });
+                };
                 wc.OpenReadAsync(imageAbsoluteUri, wc);
             }
             catch (Exception e)

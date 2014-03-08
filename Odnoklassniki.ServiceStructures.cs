@@ -2,31 +2,32 @@
 using System;
 using System.Collections.Generic;
 
+// ReSharper disable once CheckNamespace
 namespace Odnoklassniki.ServiceStructures
 {
     class ConcurrentDictionary<TKey, TValue> : Dictionary<TKey, TValue>
     {
-        private object lockObject = new Object();
+        private readonly object _lockObject = new Object();
 
-        public void safeAdd(TKey key, TValue value)
+        public void SafeAdd(TKey key, TValue value)
         {
-            lock (lockObject)
+            lock (_lockObject)
             {
                 base.Add(key, value);
             }
         }
 
-        public bool safeRemove(TKey key)
+        public bool SafeRemove(TKey key)
         {
-            lock (lockObject)
+            lock (_lockObject)
             {
                 return base.Remove(key);
             }
         }
 
-        public TValue safeGet(TKey key)
+        public TValue SafeGet(TKey key)
         {
-            lock (lockObject)
+            lock (_lockObject)
             {
                 return this[key];
             }
@@ -36,16 +37,16 @@ namespace Odnoklassniki.ServiceStructures
 
     struct CallbackStruct
     {
-        public Action<string> onSuccess;
-        public Action<Exception> onError;
-        public PhoneApplicationPage callbackContext;
+        public Action<string> OnSuccess;
+        public Action<Exception> OnError;
+        public PhoneApplicationPage CallbackContext;
     }
 
     struct AuthCallbackStruct
     {
-        public Action onSuccess;
-        public Action<Exception> onError;
-        public PhoneApplicationPage callbackContext;
-        public bool saveSession;
+        public Action OnSuccess;
+        public Action<Exception> OnError;
+        public PhoneApplicationPage CallbackContext;
+        public bool SaveSession;
     }
 }
