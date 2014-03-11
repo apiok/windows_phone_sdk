@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Text;
 using Microsoft.Phone.Controls;
 using System.Windows.Navigation;
-using System.Windows.Media.Imaging;
 using System.IO.IsolatedStorage;
 using Odnoklassniki.ServiceStructures;
 using System.ComponentModel;
@@ -433,47 +432,5 @@ namespace Odnoklassniki
         }
 
 
-    }
-
-    class Utils
-    {
-        public static void DownloadImageAsync(Uri imageAbsoluteUri, PhoneApplicationPage context, Action<BitmapImage> callbackOnSuccess, Action<Exception> callbackOnError)
-        {
-            try
-            {
-                WebClient wc = new WebClient();
-                wc.OpenReadCompleted += (s, e) =>
-                {
-                    if (e.Error == null && !e.Cancelled)
-                    {
-                        try
-                        {
-                            BitmapImage image = new BitmapImage();
-                            image.SetSource(e.Result);
-                            context.Dispatcher.BeginInvoke(() => callbackOnSuccess.Invoke(image));
-                        }
-                        catch (Exception ex)
-                        {
-                            if (callbackOnError != null)
-                            {
-                                callbackOnError.Invoke(ex);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine("Error downloading image");
-                    }
-                };
-                wc.OpenReadAsync(imageAbsoluteUri, wc);
-            }
-            catch (Exception e)
-            {
-                if (callbackOnError != null)
-                {
-                    callbackOnError.Invoke(e);
-                }
-            }
-        }
     }
 }
